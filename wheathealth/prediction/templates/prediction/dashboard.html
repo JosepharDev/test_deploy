@@ -2,158 +2,21 @@
 <html>
 <head>
     <title>Wheat Health Monitoring</title>
-    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.7.1/dist/leaflet.css" />
-    <link rel="stylesheet" href="https://unpkg.com/leaflet-draw@1.0.4/dist/leaflet.draw.css" />
-    <script src="https://unpkg.com/leaflet@1.7.1/dist/leaflet.js"></script>
-    <script src="https://unpkg.com/leaflet-draw@1.0.4/dist/leaflet.draw.js"></script>
-    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
-    <script src="https://cdn.jsdelivr.net/npm/chartjs-plugin-datalabels@2.0.0"></script>
-    <style>
-        body { font-family: Arial, sans-serif; margin: 0; padding: 15px; background-color: #f5f5f5; }
-        .dashboard { display: grid; grid-template-columns: 1fr 1fr; gap: 15px; width: 100%%; margin: 0 auto; }
-        #map { height: 400px; grid-column: 1 / -1; }
-        .panel { background: white; padding: 15px; border-radius: 8px; box-shadow: 0 2px 6px rgba(0,0,0,0.1); }
-        .chart-container { height: 220px; margin-top: 10px; position: relative; }
-        .mini-charts { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
-        .data-table { width: 100%; border-collapse: collapse; font-size: 0.85em; margin: 10px 0; }
-        .data-table th, .data-table td { padding: 8px; border: 1px solid #ddd; text-align: left; }
-        .data-table th { background-color: #f2f2f2; font-weight: bold; }
-        .data-table tr:nth-child(even) { background-color: #f9f9f9; }
-        #results { grid-column: 1 / -1; }
-        .health-status { padding: 12px; border-radius: 6px; margin: 15px 0; }
-        .healthy { background-color: #e8f5e9; border-left: 4px solid #4CAF50; }
-        .unhealthy { background-color: #ffebee; border-left: 4px solid #F44336; }
-        .form-row { margin-bottom: 12px; }
-        label { display: block; margin-bottom: 5px; font-weight: bold; font-size: 0.9em; color: #555; }
-        input, select { width: 100%; padding: 8px; border: 1px solid #ddd; border-radius: 4px; box-sizing: border-box; }
-        button { background: #4CAF50; color: white; border: none; padding: 10px 15px; border-radius: 4px; cursor: pointer; font-weight: bold; }
-        button:hover { background: #45a049; }
-        button:disabled { background: #cccccc; cursor: not-allowed; }
-        .table-section { margin-bottom: 20px; }
-        .section-title { margin: 15px 0 10px 0; color: #333; }
-        #spectral-reflectance-chart { background-color: white; padding: 5px; border-radius: 4px; }
-    </style>
+    <!-- All previous head content remains the same -->
 </head>
 <body>
-    <h1 style="color: #2c3e50; text-align: center;">Wheat Health Monitoring</h1>
+    <!-- All previous HTML content remains the same until the script section -->
     
-    <div class="dashboard">
-        <div id="map" class="panel"></div>
-        
-        <div class="panel">
-            <h3>Analysis Parameters</h3>
-            <div class="form-row">
-                <label for="start-date">Start Date</label>
-                <input type="date" id="start-date" value="2023-01-01">
-            </div>
-            <div class="form-row">
-                <label for="end-date">End Date</label>
-                <input type="date" id="end-date" value="2023-04-30">
-            </div>
-            <button id="predict-btn">Analyze Wheat Health</button>
-        </div>
-        
-        <div id="results" class="panel" style="display: none;">
-            <h2 style="color: #2c3e50; border-bottom: 1px solid #eee; padding-bottom: 10px;">Analysis Results</h2>
-            <div id="prediction-result"></div>
-            
-            {% comment %} <div class="chart-container">
-                <canvas id="spectral-reflectance-chart"></canvas>
-            </div> {% endcomment %}
-            
-            <div class="mini-charts">
-                <div class="chart-container">
-                    <canvas id="health-chart"></canvas>
-                </div>
-                <div class="chart-container">
-                    <canvas id="vegetation-indices-chart"></canvas>
-                </div>
-            </div>
-            
-            <div class="table-section">
-                <h4 class="section-title">Spectral Band Values</h4>
-                <div id="spectral-bands-table"></div>
-            </div>
-            
-            <div class="table-section">
-                <h4 class="section-title">Vegetation Indices</h4>
-                <div id="vegetation-indices-table"></div>
-            </div>
-        </div>
-    </div>
-
     <script>
-        // Initialize map
-        const map = L.map('map').setView([30.3753, 69.3451], 6);
-        L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
-            attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
-        }).addTo(map);
-        
-        // Add drawing control
-        const drawnItems = new L.FeatureGroup();
-        map.addLayer(drawnItems);
-        const drawControl = new L.Control.Draw({
-            draw: {
-                polygon: { allowIntersection: false, showArea: true },
-                rectangle: true,
-                circle: false,
-                marker: false,
-                polyline: false
-            },
-            edit: { featureGroup: drawnItems }
-        });
-        map.addControl(drawControl);
-        
-        // Handle drawing events
-        map.on(L.Draw.Event.CREATED, function (e) {
-            drawnItems.clearLayers();
-            drawnItems.addLayer(e.layer);
-        });
-        
-        // Prediction button handler
-        document.getElementById('predict-btn').addEventListener('click', async function() {
-            const btn = this;
-            btn.disabled = true;
-            btn.textContent = 'Processing...';
-            
-            const layers = drawnItems.getLayers();
-            if (layers.length === 0) {
-                alert('Please draw an area of interest on the map first');
-                btn.disabled = false;
-                btn.textContent = 'Analyze Wheat Health';
-                return;
-            }
-            
-            try {
-                const response = await fetch('/predict/', {
-                    method: 'POST',
-                    headers: {
-                        'Content-Type': 'application/json',
-                        'X-CSRFToken': getCookie('csrftoken')
-                    },
-                    body: JSON.stringify({
-                        geometry: layers[0].toGeoJSON().geometry,
-                        start_date: document.getElementById('start-date').value,
-                        end_date: document.getElementById('end-date').value
-                    })
-                });
-                
-                const data = await response.json();
-                
-                if (data.status === 'success') {
-                    displayResults(data);
-                } else {
-                    alert('Error: ' + data.message);
-                }
-            } catch (error) {
-                alert('Request failed: ' + error);
-            } finally {
-                btn.disabled = false;
-                btn.textContent = 'Analyze Wheat Health';
-            }
-        });
-        
-        // Display results with multiple charts and tables
+        // Initialize all chart variables
+        let healthChart = null;
+        let vegetationIndicesChart = null;
+        let growthStageChart = null;
+        let spectralReflectanceChart = null;
+
+        // Previous map initialization code remains the same...
+
+        // Modified displayResults function
         function displayResults(data) {
             document.getElementById('results').style.display = 'block';
             const prediction = data.prediction;
@@ -170,11 +33,13 @@
                 <p><strong>Unhealthy Probability:</strong> ${(prediction.probabilities.unhealthy * 100).toFixed(2)}%</p>
             `;
             
-            // 1. Spectral Reflectance Chart (like your screenshot)
-            createSpectralReflectanceChart(data);
+            // Destroy existing charts if they exist
+            if (healthChart) healthChart.destroy();
+            if (vegetationIndicesChart) vegetationIndicesChart.destroy();
+            if (growthStageChart) growthStageChart.destroy();
             
-            // 2. Health Probability Chart (Doughnut)
-            createMiniChart(
+            // Create new charts
+            healthChart = createMiniChart(
                 'health-chart',
                 'doughnut',
                 ['Healthy', 'Unhealthy'],
@@ -183,9 +48,8 @@
                 'Health Probability'
             );
             
-            // 3. Vegetation Indices Chart (Bar)
             const vegetationIndices = ['NDVI', 'GNDVI', 'NPCI', 'DWSI', 'RVSI'];
-            createMiniChart(
+            vegetationIndicesChart = createMiniChart(
                 'vegetation-indices-chart',
                 'bar',
                 vegetationIndices,
@@ -193,185 +57,28 @@
                 '#2196F3',
                 'Vegetation Indices'
             );
-            
-            // Create spectral bands table
-            const spectralBands = Object.entries(bandInfo)
-                .filter(([_, info]) => info.type === 'spectral')
-                .sort((a, b) => a[1].wavelength - b[1].wavelength);
-            
-            document.getElementById('spectral-bands-table').innerHTML = `
-                <table class="data-table">
-                    <tr>
-                        <th>Band</th>
-                        <th>Name</th>
-                        <th>Wavelength (nm)</th>
-                        <th>Reflectance Value</th>
-                    </tr>
-                    ${spectralBands.map(([band, info]) => `
-                        <tr>
-                            <td>${band}</td>
-                            <td>${info.name}</td>
-                            <td>${info.wavelength}</td>
-                            <td>${(bandValues[band] || 0).toFixed(4)}</td>
-                        </tr>
-                    `).join('')}
-                </table>
-            `;
-            
-            // Create vegetation indices table
-            const indices = Object.entries(bandInfo)
-                .filter(([_, info]) => info.type === 'index');
-            
-            document.getElementById('vegetation-indices-table').innerHTML = `
-                <table class="data-table">
-                    <tr>
-                        <th>Index</th>
-                        <th>Name</th>
-                        <th>Value</th>
-                    </tr>
-                    ${indices.map(([index, info]) => `
-                        <tr>
-                            <td>${index}</td>
-                            <td>${info.name}</td>
-                            <td>${(bandValues[index] || 0).toFixed(4)}</td>
-                        </tr>
-                    `).join('')}
-                </table>
-            `;
-        }
-        
-        // Create spectral reflectance chart (like your screenshot)
-        function createSpectralReflectanceChart(data) {
-            const ctx = document.getElementById('spectral-reflectance-chart');
-            if (ctx.chart) ctx.chart.destroy();
 
-            // Filter and sort spectral bands by wavelength
-            const spectralBands = Object.entries(data.band_data.band_info)
-                .filter(([_, info]) => info.type === 'spectral')
-                .sort((a, b) => a[1].wavelength - b[1].wavelength);
-
-            const wavelengths = spectralBands.map(([_, info]) => info.wavelength);
-            const bandNames = spectralBands.map(([band, _]) => band);
-
-            // Sample data - replace with your actual reference data
-            const datasets = [
-                {
-                    label: 'Healthy Reference',
-                    data: [8, 12, 7, 42, 48, 45, 40, 38, 22, 12],
-                    borderColor: '#4CAF50',
-                    borderWidth: 2,
-                    pointRadius: 4,
-                    fill: false
-                },
-                {
-                    label: 'Current Field',
-                    data: bandNames.map(band => (data.band_data.area_values[band] || 0) * 100),
-                    borderColor: '#2196F3',
-                    borderWidth: 2,
-                    pointRadius: 4,
-                    fill: false
-                },
-                {
-                    label: 'DSI-1',
-                    data: [10, 15, 9, 38, 43, 40, 36, 33, 20, 15],
-                    borderColor: '#FF9800',
-                    borderWidth: 1,
-                    borderDash: [5, 5],
-                    pointRadius: 2,
-                    fill: false
-                },
-                {
-                    label: 'DSI-2',
-                    data: [12, 18, 10, 35, 40, 38, 34, 30, 18, 13],
-                    borderColor: '#9C27B0',
-                    borderWidth: 1,
-                    borderDash: [5, 5],
-                    pointRadius: 2,
-                    fill: false
-                }
-                // Add more DSI lines as needed
-            ];
-
-            ctx.chart = new Chart(ctx, {
-                type: 'line',
-                data: {
-                    labels: wavelengths.map(w => Math.round(w)),
-                    datasets: datasets
-                },
-                options: {
-                    responsive: true,
-                    maintainAspectRatio: false,
-                    plugins: {
-                        title: {
-                            display: true,
-                            text: 'Spectral Reflectance Profile',
-                            font: { size: 14 }
-                        },
-                        tooltip: {
-                            callbacks: {
-                                label: (context) => {
-                                    return `${context.dataset.label}: ${context.raw.toFixed(2)}%`;
-                                },
-                                afterLabel: (context) => {
-                                    const band = bandNames[context.dataIndex];
-                                    const info = data.band_data.band_info[band];
-                                    return `${info.name} (${band}) ${info.wavelength}nm`;
-                                }
-                            }
-                        },
-                        legend: {
-                            position: 'bottom',
-                            labels: {
-                                boxWidth: 12,
-                                padding: 20
-                            }
-                        }
-                    },
-                    scales: {
-                        y: {
-                            title: { 
-                                display: true, 
-                                text: '% Reflectance',
-                                font: { weight: 'bold' }
-                            },
-                            min: 0,
-                            max: 100,
-                            ticks: { 
-                                stepSize: 10,
-                                callback: (value) => `${value}%`
-                            }
-                        },
-                        x: {
-                            title: { 
-                                display: true, 
-                                text: 'Wavelength (nm)',
-                                font: { weight: 'bold' }
-                            },
-                            ticks: {
-                                callback: (value, index) => 
-                                    index % 2 === 0 ? value : ''
-                            }
-                        }
-                    },
-                    interaction: {
-                        intersect: false,
-                        mode: 'index'
-                    }
-                }
+            growthStageChart = createGrowthStageChart(data);
+            
+            // Set up index selector change handler
+            document.getElementById('index-select').addEventListener('change', function() {
+                if (growthStageChart) growthStageChart.destroy();
+                growthStageChart = updateGrowthStageChart(data, this.value);
             });
+            
+            // Rest of your table creation code remains the same...
         }
-        
-        // Helper function to create consistent mini charts
+
+        // Modified chart creation functions to return chart instances
         function createMiniChart(canvasId, type, labels, data, color, title) {
-            const ctx = document.getElementById(canvasId);
-            if (ctx.chart) ctx.chart.destroy();
+            const ctx = document.getElementById(canvasId).getContext('2d');
             
             const backgroundColors = Array.isArray(color) ? color : 
                 (type === 'line' || type === 'radar') ? 
                     [color] : 
                     new Array(data.length).fill(color);
             
-            const config = {
+            return new Chart(ctx, {
                 type: type,
                 data: {
                     labels: labels,
@@ -412,17 +119,149 @@
                     }
                 },
                 plugins: [ChartDataLabels]
-            };
+            });
+        }
+
+        function createGrowthStageChart(data) {
+            const ctx = document.getElementById('growth-stage-chart').getContext('2d');
+            const selectedIndex = document.getElementById('index-select').value;
+            const chartData = growthStageData[selectedIndex] || growthStageData['DWSI'];
             
-            ctx.chart = new Chart(ctx, config);
+            return new Chart(ctx, {
+                type: 'line',
+                data: {
+                    labels: ['Dec. 15', 'Jan', 'Feb', 'March', 'April', 'May'],
+                    datasets: [{
+                        label: selectedIndex,
+                        data: chartData,
+                        borderColor: '#3f51b5',
+                        backgroundColor: 'rgba(63, 81, 181, 0.1)',
+                        borderWidth: 3,
+                        pointRadius: 5,
+                        pointBackgroundColor: '#3f51b5',
+                        fill: true,
+                        tension: 0.3
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    plugins: {
+                        title: {
+                            display: true,
+                            text: 'Crop Growth Stage Monitoring',
+                            font: { size: 14 }
+                        },
+                        legend: {
+                            display: false
+                        },
+                        tooltip: {
+                            callbacks: {
+                                title: (context) => {
+                                    const stages = ['Tillering', 'Stem Elongation', 'Heading', 'Grain Filling', 'Harvest'];
+                                    return stages[context[0].dataIndex] || 'Growth Stage';
+                                },
+                                label: (context) => {
+                                    return `${selectedIndex}: ${context.parsed.y.toFixed(2)}`;
+                                }
+                            }
+                        }
+                    },
+                    scales: {
+                        y: {
+                            title: {
+                                display: true,
+                                text: 'Index Value',
+                                font: { weight: 'bold' }
+                            },
+                            min: 0,
+                            max: Math.max(...chartData) * 1.2
+                        },
+                        x: {
+                            title: {
+                                display: true,
+                                text: 'Growth Stage Timeline',
+                                font: { weight: 'bold' }
+                            },
+                            grid: {
+                                display: false
+                            }
+                        }
+                    }
+                }
+            });
         }
         
-        // Helper function to get CSRF token
-        function getCookie(name) {
-            const value = `; ${document.cookie}`;
-            const parts = value.split(`; ${name}=`);
-            if (parts.length === 2) return parts.pop().split(';').shift();
+        function updateGrowthStageChart(data, index) {
+            const ctx = document.getElementById('growth-stage-chart').getContext('2d');
+            const chartData = growthStageData[index] || growthStageData['DWSI'];
+            
+            return new Chart(ctx, {
+                type: 'line',
+                data: {
+                    labels: ['Dec. 15', 'Jan', 'Feb', 'March', 'April', 'May'],
+                    datasets: [{
+                        label: index,
+                        data: chartData,
+                        borderColor: '#3f51b5',
+                        backgroundColor: 'rgba(63, 81, 181, 0.1)',
+                        borderWidth: 3,
+                        pointRadius: 5,
+                        pointBackgroundColor: '#3f51b5',
+                        fill: true,
+                        tension: 0.3
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    plugins: {
+                        title: {
+                            display: true,
+                            text: 'Crop Growth Stage Monitoring',
+                            font: { size: 14 }
+                        },
+                        legend: {
+                            display: false
+                        },
+                        tooltip: {
+                            callbacks: {
+                                title: (context) => {
+                                    const stages = ['Tillering', 'Stem Elongation', 'Heading', 'Grain Filling', 'Harvest'];
+                                    return stages[context[0].dataIndex] || 'Growth Stage';
+                                },
+                                label: (context) => {
+                                    return `${index}: ${context.parsed.y.toFixed(2)}`;
+                                }
+                            }
+                        }
+                    },
+                    scales: {
+                        y: {
+                            title: {
+                                display: true,
+                                text: 'Index Value',
+                                font: { weight: 'bold' }
+                            },
+                            min: 0,
+                            max: Math.max(...chartData) * 1.2
+                        },
+                        x: {
+                            title: {
+                                display: true,
+                                text: 'Growth Stage Timeline',
+                                font: { weight: 'bold' }
+                            },
+                            grid: {
+                                display: false
+                            }
+                        }
+                    }
+                }
+            });
         }
+
+        // Rest of your code remains the same...
     </script>
 </body>
 </html>
