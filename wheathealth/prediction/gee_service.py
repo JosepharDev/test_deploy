@@ -79,4 +79,5 @@ class GEEDataExtractor:
         'DWSI': {'name': 'DWSI', 'type': 'index'},
         'RVSI': {'name': 'RVSI', 'type': 'index'}
     }
+
 }

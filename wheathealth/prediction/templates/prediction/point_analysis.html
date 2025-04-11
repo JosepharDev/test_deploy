@@ -1,0 +1,280 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Crop Indices Monitoring</title>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            margin: 20px;
+            background-color: #f5f5f5;
+        }
+        .container {
+            max-width: 1000px;
+            margin: 0 auto;
+            background: white;
+            padding: 20px;
+            border-radius: 8px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+        }
+        h1 {
+            color: #2c3e50;
+            text-align: center;
+        }
+        .controls {
+            display: flex;
+            gap: 20px;
+            margin-bottom: 20px;
+            flex-wrap: wrap;
+        }
+        .control-group {
+            flex: 1;
+            min-width: 200px;
+        }
+        label {
+            display: block;
+            margin-bottom: 5px;
+            font-weight: bold;
+        }
+        select, input {
+            width: 100%;
+            padding: 8px;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+        }
+        button {
+            background-color: #4CAF50;
+            color: white;
+            border: none;
+            padding: 10px 15px;
+            border-radius: 4px;
+            cursor: pointer;
+            font-weight: bold;
+        }
+        button:hover {
+            background-color: #45a049;
+        }
+        .chart-container {
+            position: relative;
+            height: 500px;
+            margin-top: 20px;
+        }
+        .data-warning {
+            color: #e74c3c;
+            margin-top: 10px;
+            font-style: italic;
+        }
+        .growth-stage {
+            position: absolute;
+            top: 10px;
+            font-size: 12px;
+            color: #666;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>Crop Vegetation Indices Monitor</h1>
+        
+        <div class="controls">
+            <div class="control-group">
+                <label for="latitude">Latitude</label>
+                <input type="number" id="latitude" step="any" placeholder="e.g., 37.7749">
+            </div>
+            <div class="control-group">
+                <label for="longitude">Longitude</label>
+                <input type="number" id="longitude" step="any" placeholder="e.g., -122.4194">
+            </div>
+            <div class="control-group">
+                <label for="startDate">Start Date</label>
+                <input type="date" id="startDate">
+            </div>
+            <div class="control-group">
+                <label for="indexSelect">Select Index</label>
+                <select id="indexSelect">
+                    <option value="NDVI">NDVI (Normalized Difference Vegetation Index)</option>
+                    <option value="GNDVI">GNDVI (Green NDVI)</option>
+                    <option value="DWSI">DWSI (Disease Water Stress Index)</option>
+                    <option value="RSV1">RSV1</option>
+                </select>
+            </div>
+        </div>
+        
+        <button id="fetchDataBtn">Load Data</button>
+        <div id="dataWarning" class="data-warning" style="display: none;"></div>
+        
+        <div class="chart-container">
+            <canvas id="growthChart"></canvas>
+        </div>
+    </div>
+
+    <script>
+        // DOM Elements
+        const latitudeInput = document.getElementById('latitude');
+        const longitudeInput = document.getElementById('longitude');
+        const startDateInput = document.getElementById('startDate');
+        const indexSelect = document.getElementById('indexSelect');
+        const fetchBtn = document.getElementById('fetchDataBtn');
+        const warningDiv = document.getElementById('dataWarning');
+        
+        // Initialize date to today - 3 months
+        startDateInput.valueAsDate = new Date(new Date().setMonth(new Date().getMonth() - 3));
+        
+        // Chart initialization
+        const ctx = document.getElementById('growthChart').getContext('2d');
+        const growthChart = new Chart(ctx, {
+            type: 'line',
+            data: {
+                labels: [],
+                datasets: [{
+                    label: '',
+                    data: [],
+                    borderColor: '#4CAF50',
+                    backgroundColor: 'rgba(76, 175, 80, 0.1)',
+                    tension: 0.3,
+                    fill: true,
+                    pointRadius: 5,
+                    pointBackgroundColor: '#4CAF50',
+                    borderWidth: 2
+                }]
+            },
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                plugins: {
+                    legend: {
+                        display: false
+                    },
+                    tooltip: {
+                        callbacks: {
+                            label: function(context) {
+                                return `${context.dataset.label}: ${context.parsed.y?.toFixed(4) || 'N/A'}`;
+                            }
+                        }
+                    }
+                },
+                scales: {
+                    x: {
+                        title: {
+                            display: true,
+                            text: 'Date',
+                            font: {
+                                weight: 'bold'
+                            }
+                        },
+                        grid: {
+                            display: false
+                        }
+                    },
+                    y: {
+                        title: {
+                            display: true,
+                            text: 'Index Value',
+                            font: {
+                                weight: 'bold'
+                            }
+                        },
+                        min: 0,
+                        max: 1
+                    }
+                }
+            }
+        });
+
+        // Fetch data from backend
+        async function fetchData() {
+            const lat = latitudeInput.value;
+            const lon = longitudeInput.value;
+            const startDate = startDateInput.value;
+            
+            if (!lat || !lon || !startDate) {
+                showWarning('Please fill all fields');
+                return;
+            }
+            
+            fetchBtn.disabled = true;
+            showWarning('Loading data...');
+            
+            try {
+                const response = await fetch(
+                    `/api/indices/?lat=${lat}&lon=${lon}&start_date=${startDate}`
+                );
+                
+                if (!response.ok) {
+                    throw new Error(`Server error: ${response.status}`);
+                }
+                
+                const data = await response.json();
+                processData(data);
+                
+            } catch (error) {
+                console.error('Fetch error:', error);
+                showWarning('Failed to load data: ' + error.message);
+            } finally {
+                fetchBtn.disabled = false;
+            }
+        }
+        
+        // Process and display the data
+        function processData(indicesData) {
+            const selectedIndex = indexSelect.value;
+            const validData = indicesData.filter(item => item.data_available);
+            
+            if (validData.length === 0) {
+                showWarning('No valid data available for this location and time period');
+                growthChart.data.labels = [];
+                growthChart.data.datasets[0].data = [];
+                growthChart.update();
+                return;
+            }
+            
+            // Count missing data points
+            const missingData = indicesData.length - validData.length;
+            if (missingData > 0) {
+                showWarning(`${missingData} time periods had no data (cloud cover or missing imagery)`);
+            } else {
+                warningDiv.style.display = 'none';
+            }
+            
+            // Update chart
+            growthChart.data.labels = validData.map(item => {
+                const date = new Date(item.date);
+                return date.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+            });
+            
+            growthChart.data.datasets[0].data = validData.map(item => item[selectedIndex]);
+            growthChart.data.datasets[0].label = `${selectedIndex} Index`;
+            
+            // Adjust y-axis based on index
+            const ranges = {
+                'NDVI': { min: 0, max: 1 },
+                'GNDVI': { min: 0, max: 1 },
+                'DWSI': { min: -1, max: 1 },
+                'RSV1': { min: 0, max: 10 }
+            };
+            
+            growthChart.options.scales.y.min = ranges[selectedIndex].min;
+            growthChart.options.scales.y.max = ranges[selectedIndex].max;
+            growthChart.options.scales.y.title.text = `${selectedIndex} Value`;
+            
+            growthChart.update();
+        }
+        
+        function showWarning(message) {
+            warningDiv.textContent = message;
+            warningDiv.style.display = message ? 'block' : 'none';
+        }
+        
+        // Event listeners
+        fetchBtn.addEventListener('click', fetchData);
+        indexSelect.addEventListener('change', () => {
+            if (growthChart.data.labels.length > 0) {
+                processData(growthChart.data.originalData || []);
+            }
+        });
+        
+        // Store original data on chart for index switching
+        growthChart.data.originalData = [];
+    </script>
+</body>
+</html>

@@ -2,21 +2,238 @@
 <html>
 <head>
     <title>Wheat Health Monitoring</title>
-    <!-- All previous head content remains the same -->
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.7.1/dist/leaflet.css" />
+    <link rel="stylesheet" href="https://unpkg.com/leaflet-draw@1.0.4/dist/leaflet.draw.css" />
+    <script src="https://unpkg.com/leaflet@1.7.1/dist/leaflet.js"></script>
+    <script src="https://unpkg.com/leaflet-draw@1.0.4/dist/leaflet.draw.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chartjs-plugin-datalabels@2.0.0"></script>
+    <style>
+        body { font-family: Arial, sans-serif; margin: 0; padding: 15px; background-color: #f5f5f5; }
+        .dashboard { display: grid; grid-template-columns: 1fr 1fr; gap: 15px; max-width: 1200px; margin: 0 auto; }
+        #map { height: 400px; grid-column: 1 / -1; }
+        .panel { background: white; padding: 15px; border-radius: 8px; box-shadow: 0 2px 6px rgba(0,0,0,0.1); }
+        .chart-container { height: 220px; margin-top: 10px; position: relative; }
+        .mini-charts { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+        .data-table { width: 100%; border-collapse: collapse; font-size: 0.85em; margin: 10px 0; }
+        .data-table th, .data-table td { padding: 8px; border: 1px solid #ddd; text-align: left; }
+        .data-table th { background-color: #f2f2f2; font-weight: bold; }
+        .data-table tr:nth-child(even) { background-color: #f9f9f9; }
+        #results { grid-column: 1 / -1; }
+        .health-status { padding: 12px; border-radius: 6px; margin: 15px 0; }
+        .healthy { background-color: #e8f5e9; border-left: 4px solid #4CAF50; }
+        .unhealthy { background-color: #ffebee; border-left: 4px solid #F44336; }
+        .form-row { margin-bottom: 12px; }
+        label { display: block; margin-bottom: 5px; font-weight: bold; font-size: 0.9em; color: #555; }
+        input, select { width: 100%; padding: 8px; border: 1px solid #ddd; border-radius: 4px; box-sizing: border-box; }
+        button { background: #4CAF50; color: white; border: none; padding: 10px 15px; border-radius: 4px; cursor: pointer; font-weight: bold; }
+        button:hover { background: #45a049; }
+        button:disabled { background: #cccccc; cursor: not-allowed; }
+        .table-section { margin-bottom: 20px; }
+        .section-title { margin: 15px 0 10px 0; color: #333; }
+        #spectral-reflectance-chart { background-color: white; padding: 5px; border-radius: 4px; }
+        
+        /* Growth Stage Monitoring Styles */
+        .growth-stage-container { 
+            margin-top: 20px;
+            padding: 15px;
+            background: white;
+            border-radius: 8px;
+            box-shadow: 0 2px 6px rgba(0,0,0,0.1);
+        }
+        .chart-controls {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 15px;
+        }
+        .index-selector {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+        .growth-stage-chart { 
+            height: 300px;
+            margin-bottom: 10px;
+        }
+        .stage-labels {
+            display: flex;
+            justify-content: space-between;
+            margin-top: 5px;
+            font-size: 0.8em;
+            color: #666;
+            text-align: center;
+        }
+        .timeline-labels {
+            display: flex;
+            justify-content: space-between;
+            margin-top: 5px;
+            font-size: 0.8em;
+            color: #666;
+        }
+        .stage-label {
+            flex: 1;
+            text-align: center;
+        }
+    </style>
 </head>
 <body>
-    <!-- All previous HTML content remains the same until the script section -->
+    <h1 style="color: #2c3e50; text-align: center;">Wheat Health Monitoring</h1>
     
+    <div class="dashboard">
+        <div id="map" class="panel"></div>
+        
+        <div class="panel">
+            <h3>Analysis Parameters</h3>
+            <div class="form-row">
+                <label for="start-date">Start Date</label>
+                <input type="date" id="start-date" value="2023-01-01">
+            </div>
+            <div class="form-row">
+                <label for="end-date">End Date</label>
+                <input type="date" id="end-date" value="2023-04-30">
+            </div>
+            <button id="predict-btn">Analyze Wheat Health</button>
+        </div>
+        
+        <div id="results" class="panel" style="display: none;">
+            <h2 style="color: #2c3e50; border-bottom: 1px solid #eee; padding-bottom: 10px;">Analysis Results</h2>
+            <div id="prediction-result"></div>
+            
+            <div class="mini-charts">
+                <div class="chart-container">
+                    <canvas id="health-chart"></canvas>
+                </div>
+                <div class="chart-container">
+                    <canvas id="vegetation-indices-chart"></canvas>
+                </div>
+            </div>
+            
+            <div class="growth-stage-container">
+                <div class="chart-controls">
+                    <h3>Crop Growth Stage Monitoring</h3>
+                    <div class="index-selector">
+                        <label for="index-select">Select Index:</label>
+                        <select id="index-select">
+                            <option value="DWSI">Water Stress (DWSI)</option>
+                            <option value="NDVI">Vegetation Health (NDVI)</option>
+                            <option value="GNDVI">Green Vegetation (GNDVI)</option>
+                            <option value="RVSI">Stress Index (RVSI)</option>
+                        </select>
+                    </div>
+                </div>
+                <div class="chart-container growth-stage-chart">
+                    <canvas id="growth-stage-chart"></canvas>
+                </div>
+                <div class="stage-labels">
+                    <div class="stage-label">Tillering</div>
+                    <div class="stage-label">Stem Elongation</div>
+                    <div class="stage-label">Heading</div>
+                    <div class="stage-label">Grain Filling</div>
+                    <div class="stage-label">Harvest</div>
+                </div>
+                <div class="timeline-labels">
+                    <span>Dec. 15</span>
+                    <span>Jan</span>
+                    <span>Feb</span>
+                    <span>March</span>
+                    <span>April</span>
+                    <span>May</span>
+                </div>
+            </div>
+            
+            <div class="table-section">
+                <h4 class="section-title">Spectral Band Values</h4>
+                <div id="spectral-bands-table"></div>
+            </div>
+            
+            <div class="table-section">
+                <h4 class="section-title">Vegetation Indices</h4>
+                <div id="vegetation-indices-table"></div>
+            </div>
+        </div>
+    </div>
+
     <script>
-        // Initialize all chart variables
-        let healthChart = null;
-        let vegetationIndicesChart = null;
-        let growthStageChart = null;
-        let spectralReflectanceChart = null;
+        // Initialize map
+        const map = L.map('map').setView([30.3753, 69.3451], 6);
+        L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+            attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
+        }).addTo(map);
+        
+        // Add drawing control
+        const drawnItems = new L.FeatureGroup();
+        map.addLayer(drawnItems);
+        const drawControl = new L.Control.Draw({
+            draw: {
+                polygon: { allowIntersection: false, showArea: true },
+                rectangle: true,
+                circle: false,
+                marker: false,
+                polyline: false
+            },
+            edit: { featureGroup: drawnItems }
+        });
+        map.addControl(drawControl);
+        
+        // Handle drawing events
+        map.on(L.Draw.Event.CREATED, function (e) {
+            drawnItems.clearLayers();
+            drawnItems.addLayer(e.layer);
+        });
+        
+        // Prediction button handler
+        document.getElementById('predict-btn').addEventListener('click', async function() {
+            const btn = this;
+            btn.disabled = true;
+            btn.textContent = 'Processing...';
+            
+            const layers = drawnItems.getLayers();
+            if (layers.length === 0) {
+                alert('Please draw an area of interest on the map first');
+                btn.disabled = false;
+                btn.textContent = 'Analyze Wheat Health';
+                return;
+            }
+            
+            try {
+                const response = await fetch('/predict/', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'X-CSRFToken': getCookie('csrftoken')
+                    },
+                    body: JSON.stringify({
+                        geometry: layers[0].toGeoJSON().geometry,
+                        start_date: document.getElementById('start-date').value,
+                        end_date: document.getElementById('end-date').value
+                    })
+                });
+                
+                const data = await response.json();
+                
+                if (data.status === 'success') {
+                    displayResults(data);
+                } else {
+                    alert('Error: ' + data.message);
+                }
+            } catch (error) {
+                alert('Request failed: ' + error);
+            } finally {
+                btn.disabled = false;
+                btn.textContent = 'Analyze Wheat Health';
+            }
+        });
 
-        // Previous map initialization code remains the same...
-
-        // Modified displayResults function
+        // Growth stage data (sample - replace with your actual data)
+        const growthStageData = {
+            'DWSI': [2.8, 1.7, 1.4, 0.7, 0.4, 0],
+            'NDVI': [0.4, 0.6, 0.8, 0.7, 0.5, 0.3],
+            'GNDVI': [0.3, 0.5, 0.7, 0.6, 0.4, 0.2],
+            'RVSI': [1.2, 0.9, 0.7, 0.5, 0.3, 0.1]
+        };
+        
+        // Display results with multiple charts and tables
         function displayResults(data) {
             document.getElementById('results').style.display = 'block';
             const prediction = data.prediction;
@@ -33,13 +250,8 @@
                 <p><strong>Unhealthy Probability:</strong> ${(prediction.probabilities.unhealthy * 100).toFixed(2)}%</p>
             `;
             
-            // Destroy existing charts if they exist
-            if (healthChart) healthChart.destroy();
-            if (vegetationIndicesChart) vegetationIndicesChart.destroy();
-            if (growthStageChart) growthStageChart.destroy();
-            
-            // Create new charts
-            healthChart = createMiniChart(
+            // 1. Health Probability Chart (Doughnut)
+            createMiniChart(
                 'health-chart',
                 'doughnut',
                 ['Healthy', 'Unhealthy'],
@@ -48,8 +260,9 @@
                 'Health Probability'
             );
             
+            // 2. Vegetation Indices Chart (Bar)
             const vegetationIndices = ['NDVI', 'GNDVI', 'NPCI', 'DWSI', 'RVSI'];
-            vegetationIndicesChart = createMiniChart(
+            createMiniChart(
                 'vegetation-indices-chart',
                 'bar',
                 vegetationIndices,
@@ -58,76 +271,68 @@
                 'Vegetation Indices'
             );
 
-            growthStageChart = createGrowthStageChart(data);
+            // 3. Growth Stage Chart
+            createGrowthStageChart(data);
             
             // Set up index selector change handler
             document.getElementById('index-select').addEventListener('change', function() {
-                if (growthStageChart) growthStageChart.destroy();
-                growthStageChart = updateGrowthStageChart(data, this.value);
+                updateGrowthStageChart(data, this.value);
             });
             
-            // Rest of your table creation code remains the same...
-        }
-
-        // Modified chart creation functions to return chart instances
-        function createMiniChart(canvasId, type, labels, data, color, title) {
-            const ctx = document.getElementById(canvasId).getContext('2d');
+            // Create spectral bands table
+            const spectralBands = Object.entries(bandInfo)
+                .filter(([_, info]) => info.type === 'spectral')
+                .sort((a, b) => a[1].wavelength - b[1].wavelength);
             
-            const backgroundColors = Array.isArray(color) ? color : 
-                (type === 'line' || type === 'radar') ? 
-                    [color] : 
-                    new Array(data.length).fill(color);
+            document.getElementById('spectral-bands-table').innerHTML = `
+                <table class="data-table">
+                    <tr>
+                        <th>Band</th>
+                        <th>Name</th>
+                        <th>Wavelength (nm)</th>
+                        <th>Reflectance Value</th>
+                    </tr>
+                    ${spectralBands.map(([band, info]) => `
+                        <tr>
+                            <td>${band}</td>
+                            <td>${info.name}</td>
+                            <td>${info.wavelength}</td>
+                            <td>${(bandValues[band] || 0).toFixed(4)}</td>
+                        </tr>
+                    `).join('')}
+                </table>
+            `;
             
-            return new Chart(ctx, {
-                type: type,
-                data: {
-                    labels: labels,
-                    datasets: [{
-                        label: title,
-                        data: data,
-                        backgroundColor: backgroundColors,
-                        borderColor: type === 'line' ? color : undefined,
-                        borderWidth: type === 'bar' ? 1 : 2,
-                        fill: type !== 'bar'
-                    }]
-                },
-                options: {
-                    responsive: true,
-                    maintainAspectRatio: false,
-                    plugins: {
-                        title: {
-                            display: true,
-                            text: title,
-                            font: { size: 12 }
-                        },
-                        legend: {
-                            display: type === 'doughnut',
-                            position: 'bottom'
-                        },
-                        datalabels: {
-                            display: type === 'doughnut',
-                            formatter: (value) => value > 5 ? value.toFixed(1) + '%' : ''
-                        }
-                    },
-                    scales: {
-                        y: {
-                            beginAtZero: type !== 'line',
-                            ticks: {
-                                callback: (value) => type === 'doughnut' ? `${value}%` : value
-                            }
-                        }
-                    }
-                },
-                plugins: [ChartDataLabels]
-            });
+            // Create vegetation indices table
+            const indices = Object.entries(bandInfo)
+                .filter(([_, info]) => info.type === 'index');
+            
+            document.getElementById('vegetation-indices-table').innerHTML = `
+                <table class="data-table">
+                    <tr>
+                        <th>Index</th>
+                        <th>Name</th>
+                        <th>Value</th>
+                    </tr>
+                    ${indices.map(([index, info]) => `
+                        <tr>
+                            <td>${index}</td>
+                            <td>${info.name}</td>
+                            <td>${(bandValues[index] || 0).toFixed(4)}</td>
+                        </tr>
+                    `).join('')}
+                </table>
+            `;
         }
 
         function createGrowthStageChart(data) {
-            const ctx = document.getElementById('growth-stage-chart').getContext('2d');
+            const ctx = document.getElementById('growth-stage-chart');
+            if (ctx.chart) ctx.chart.destroy();
+            
             const selectedIndex = document.getElementById('index-select').value;
             const chartData = growthStageData[selectedIndex] || growthStageData['DWSI'];
             
-            return new Chart(ctx, {
+            ctx.chart = new Chart(ctx, {
                 type: 'line',
                 data: {
                     labels: ['Dec. 15', 'Jan', 'Feb', 'March', 'April', 'May'],
@@ -193,23 +398,38 @@
         }
         
         function updateGrowthStageChart(data, index) {
-            const ctx = document.getElementById('growth-stage-chart').getContext('2d');
+            const ctx = document.getElementById('growth-stage-chart');
+            if (!ctx.chart) return;
+            
             const chartData = growthStageData[index] || growthStageData['DWSI'];
             
-            return new Chart(ctx, {
-                type: 'line',
+            ctx.chart.data.datasets[0].data = chartData;
+            ctx.chart.data.datasets[0].label = index;
+            ctx.chart.options.scales.y.max = Math.max(...chartData) * 1.2;
+            ctx.chart.update();
+        }
+        
+        // Helper function to create consistent mini charts
+        function createMiniChart(canvasId, type, labels, data, color, title) {
+            const ctx = document.getElementById(canvasId);
+            if (ctx.chart) ctx.chart.destroy();
+            
+            const backgroundColors = Array.isArray(color) ? color : 
+                (type === 'line' || type === 'radar') ? 
+                    [color] : 
+                    new Array(data.length).fill(color);
+            
+            const config = {
+                type: type,
                 data: {
-                    labels: ['Dec. 15', 'Jan', 'Feb', 'March', 'April', 'May'],
+                    labels: labels,
                     datasets: [{
-                        label: index,
-                        data: chartData,
-                        borderColor: '#3f51b5',
-                        backgroundColor: 'rgba(63, 81, 181, 0.1)',
-                        borderWidth: 3,
-                        pointRadius: 5,
-                        pointBackgroundColor: '#3f51b5',
-                        fill: true,
-                        tension: 0.3
+                        label: title,
+                        data: data,
+                        backgroundColor: backgroundColors,
+                        borderColor: type === 'line' ? color : undefined,
+                        borderWidth: type === 'bar' ? 1 : 2,
+                        fill: type !== 'bar'
                     }]
                 },
                 options: {
@@ -218,50 +438,39 @@
                     plugins: {
                         title: {
                             display: true,
-                            text: 'Crop Growth Stage Monitoring',
-                            font: { size: 14 }
+                            text: title,
+                            font: { size: 12 }
                         },
                         legend: {
-                            display: false
+                            display: type === 'doughnut',
+                            position: 'bottom'
                         },
-                        tooltip: {
-                            callbacks: {
-                                title: (context) => {
-                                    const stages = ['Tillering', 'Stem Elongation', 'Heading', 'Grain Filling', 'Harvest'];
-                                    return stages[context[0].dataIndex] || 'Growth Stage';
-                                },
-                                label: (context) => {
-                                    return `${index}: ${context.parsed.y.toFixed(2)}`;
-                                }
-                            }
+                        datalabels: {
+                            display: type === 'doughnut',
+                            formatter: (value) => value > 5 ? value.toFixed(1) + '%' : ''
                         }
                     },
                     scales: {
                         y: {
-                            title: {
-                                display: true,
-                                text: 'Index Value',
-                                font: { weight: 'bold' }
-                            },
-                            min: 0,
-                            max: Math.max(...chartData) * 1.2
-                        },
-                        x: {
-                            title: {
-                                display: true,
-                                text: 'Growth Stage Timeline',
-                                font: { weight: 'bold' }
-                            },
-                            grid: {
-                                display: false
+                            beginAtZero: type !== 'line',
+                            ticks: {
+                                callback: (value) => type === 'doughnut' ? `${value}%` : value
                             }
                         }
                     }
-                }
-            });
+                },
+                plugins: [ChartDataLabels]
+            };
+            
+            ctx.chart = new Chart(ctx, config);
         }
-
-        // Rest of your code remains the same...
+        
+        // Helper function to get CSRF token
+        function getCookie(name) {
+            const value = `; ${document.cookie}`;
+            const parts = value.split(`; ${name}=`);
+            if (parts.length === 2) return parts.pop().split(';').shift();
+        }
     </script>
 </body>
 </html>
