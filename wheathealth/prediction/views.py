@@ -67,59 +67,94 @@ def get_indices_with_fallback(lat, lon, start_date, end_date):
     """
     Safely gets vegetation indices with proper serialization
     """
-    point = ee.Geometry.Point([lon, lat])
-    
+    point = ee.Geometry.Polygon([[
+        [-4.756572600555413, 34.07453831656702],
+        [-4.756926653333988, 34.074120635290505],
+        [-4.757060763342107, 34.073920681323614],
+        [-4.757044669342034, 34.073685179882744],
+        [-4.757087584686272, 34.073187512848925],
+        [-4.757087584686272, 34.07292090430669],
+        [-4.756443854522698, 34.07284980855373],
+        [-4.754115688976768, 34.07253656361696],
+        [-4.751787539672844, 34.07225882279766],
+        [-4.7517231665838855, 34.07273427588901],
+        [-4.7518089973449635, 34.07340524253599],
+        [-4.753579255294793, 34.07354743304995],
+        [-4.754222985458367, 34.07372517085677],
+        [-4.756572600555413, 34.07453831656702]
+    ]])
+
     try:
         # First try with cloud filter
         collection = (ee.ImageCollection('COPERNICUS/S2_SR_HARMONIZED')
             .filterBounds(point)
             .filterDate(start_date, end_date)
-            .sort("CLOUDY_PIXEL_PERCENTAGE"))
-        
+            .filter(ee.Filter.lt('CLOUDY_PIXEL_PERCENTAGE', 10))
+        )
+
         # Check if collection is empty
         if collection.size().getInfo() == 0:
-            # Fallback to unfiltered collection
-            collection = (ee.ImageCollection('COPERNICUS/S2_SR_HARMONIZED')
-                .filterBounds(point)
-                .filterDate(start_date, end_date)
-                .sort("CLOUDY_PIXEL_PERCENTAGE"))
-            
+            # Fallback to collection with higher cloud cover
+            collection = ee.ImageCollection('COPERNICUS/S2_SR_HARMONIZED').filterBounds(point).filterDate(start_date, end_date).filter(ee.Filter.lt('CLOUDY_PIXEL_PERCENTAGE', 30))  # Increased cloud threshold
+
             if collection.size().getInfo() == 0:
-                return {
-                    'NDVI': None,
-                    'GNDVI': None,
-                    'DWSI': None,
-                    'RSV1': None,
-                    'data_available': False
-                }
-        
-        # Calculate indices and immediately get values
+                # Final fallback - no cloud filter
+                collection = (ee.ImageCollection('COPERNICUS/S2_SR_HARMONIZED')
+                    .filterBounds(point)
+                    .filterDate(start_date, end_date)
+                )
+
+                if collection.size().getInfo() == 0:
+                    return {
+                        'NDVI': None,
+                        'GNDVI': None,
+                        'DWSI': None,
+                        'RSV1': None,
+                        'data_available': False
+                    }
+
+        # Calculate median image
         median_img = collection.median()
-        
+
+        # Cloud masking using the QA60 band (bit 10)
+        qa60 = median_img.select(['QA60']).toInt()
+        cloud_mask = qa60.bitwiseAnd(1 << 10).eq(0)  # Mask out clouds (if QA60 bit is 0)
+
+        # Apply cloud mask to the median image
+        cloud_free_img = median_img.updateMask(cloud_mask)
+
+        # --- helper function ---
         def calculate_index(img, method, *args):
-            """Helper to safely calculate and extract index values"""
             try:
                 if method == 'nd':
-                    result = img.normalizedDifference(args).reduceRegion(
-                        ee.Reducer.mean(),
-                        point,
-                        10
+                    result = img.normalizedDifference(args).rename('nd').reduceRegion(
+                        reducer=ee.Reducer.mean(),
+                        geometry=point,
+                        scale=10,
+                        bestEffort=True
                     ).getInfo()
                     return result.get('nd', None)
                 elif method == 'ratio':
-                    result = img.select(args[0]).divide(img.select(args[1])).reduceRegion(ee.Reducer.mean(),point,10).getInfo()
-                    return result.get('constant', None)
-            except:
+                    result = img.select(args[0]).divide(img.select(args[1])).rename('ratio').reduceRegion(
+                        reducer=ee.Reducer.mean(),
+                        geometry=point,
+                        scale=10,
+                        bestEffort=True
+                    ).getInfo()
+                    return result.get('ratio', None)
+            except Exception as e:
+                print(f"Error calculating index: {e}")
                 return None
-        
+
+        # --- Final return with calculated indices ---
         return {
-            'NDVI': calculate_index(median_img, 'nd', 'B8', 'B4'),
-            'GNDVI': calculate_index(median_img, 'nd', 'B8', 'B3'),
-            'DWSI': calculate_index(median_img, 'nd', 'B8', 'B11'),
-            'RSV1': calculate_index(median_img, 'ratio', 'B4', 'B2'),
+            'NDVI': calculate_index(cloud_free_img, 'nd', 'B8', 'B4'),
+            'GNDVI': calculate_index(cloud_free_img, 'nd', 'B8', 'B3'),
+            'DWSI': calculate_index(cloud_free_img, 'nd', 'B8', 'B11'),
+            'RSV1': calculate_index(cloud_free_img, 'ratio', 'B4', 'B2'),
             'data_available': True
         }
-        
+
     except Exception as e:
         logging.error(f"Error in get_indices_with_fallback: {str(e)}")
         return {
@@ -149,8 +184,8 @@ def extract_indices_view(request):
 
     # Time windows - biweekly then weekly
     time_windows = (
-        [(start_date + timedelta(days=i), 14) for i in range(0, 126, 14)] + 
-        [(start_date + timedelta(days=i), 7) for i in range(127, 178, 7)]
+        [(start_date + timedelta(days=i), 7) for i in range(0, 126, 7)] + 
+        [(start_date + timedelta(days=i), 14) for i in range(127, 178, 14)]
     )
 
     for begin, days in time_windows:
@@ -197,5 +232,6 @@ def extract_indices_view(request):
                 }
             }
         })
+        print(response_data)
 
     return JsonResponse(response_data, safe=False)
